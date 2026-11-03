@@ -1,0 +1,281 @@
+---
+name: hardware-product-design
+description: Design physical electronic products end-to-end with free open-source tools - requirements, schematic capture and PCB layout (KiCad), 3D enclosure modeling (build123d/CadQuery/OpenSCAD), circuit and thermal/mechanical simulation (ngspice, Elmer FEM, openEMS), parameter tuning (scipy, pymoo), firmware scaffolding, and complete fabrication release (Gerbers, BOM, STEP, STL). Use when developing new embedded hardware from idea to fabrication-ready artifacts.
+license: MIT
+compatibility: Python 3.10-3.14 with KiCad 8.x+, ngspice, build123d/CadQuery, FreeCAD, PlatformIO
+allowed-tools: Read Write Edit Bash Glob Grep run_command
+metadata:
+  version: "1.0.0"
+  skill-author: Antigravity Engineering
+  ecosystem: "Open Source Hardware (KiCad, build123d, ngspice, PlatformIO)"
+  tags: [hardware, pcb, kicad, cad, build123d, ngspice, firmware, bom, fabrication, dfm, emc]
+---
+
+# Hardware Product Design (Open-Source Toolchain)
+
+Design reliable, production-ready electronic hardware as **code and scripted models**. From formal requirements and circuit simulation to KiCad schematic/layout, parametric 3D enclosure modeling, thermal/EMC validation, firmware scaffolding, and complete fabrication releases (Gerbers, drill, pick-and-place, and standard-formatted BOMs).
+
+---
+
+## When to Use This Skill
+- Designing a new electronic product or embedded hardware device from concept to fabrication files.
+- Creating or modifying schematics, PCB layouts, 3D mechanical enclosures, BOMs, or circuit simulations.
+- Sizing and tuning passive components (filters, feedback loops, power converters) against a numerical specification.
+- Generating manufacturing packages for PCB assembly (JLCPCB, PCBWay, Oshpark) and 3D printing/CNC enclosure fabrication.
+- Preparing hardware bring-up plans, test point verification procedures, or EMC/ESD pre-compliance reviews.
+
+## Do Not Use This Skill When
+- The task is purely high-level software with zero physical circuit or hardware interaction.
+- The project mandates proprietary enterprise EDA tools (Altium Designer, SolidWorks, Autodesk Fusion 360, Ansys) unless the user requests migration to or interoperation with open-source formats.
+
+---
+
+## The Open-Source Hardware Toolchain
+
+Always prioritize headless CLI tools and scriptable Python APIs to guarantee end-to-end reproducibility:
+
+| Stage | Primary Tools | Automation / CLI Command |
+| :--- | :--- | :--- |
+| **Schematic & PCB** | KiCad 8.x / 9.x | `kicad-cli sch erc`, `kicad-cli pcb drc`, `pcbnew` Python API |
+| **Output Automation** | KiBot, KiKit | `kikit panelize`, automated Gerber/BOM generation |
+| **3D CAD & Enclosure** | `build123d` (preferred), CadQuery, OpenSCAD | `python -m build123d`, `openscad -o enclosure.stl`, `freecadcmd` |
+| **Circuit Simulation** | ngspice, Qucs-S, PySpice | `ngspice -b -r output.raw circuit.cir` |
+| **Parameter Tuning** | `scipy.optimize`, `pymoo` | Python Monte Carlo sweeps & E-series snapping (`scripts/`) |
+| **Thermal & Structural** | Elmer FEM, CalculiX (via FreeCAD FEM) | Scripted meshes via Gmsh, batch solver execution |
+| **Signal Integrity / RF** | openEMS, Elmer | FDTD electromagnetic simulation, S-parameter extraction |
+| **Firmware Scaffolding** | PlatformIO, Zephyr RTOS, ESP-IDF | `pio run`, `west build`, `arduino-cli` |
+| **Virtual Bring-up** | Renode, QEMU | Headless MCU emulation and peripheral register verification |
+| **Manufacturing Slicing** | OrcaSlicer, PrusaSlicer, CuraEngine | `prusa-slicer --export-gcode enclosure.stl` |
+
+> [!IMPORTANT]
+> **Pre-Flight Environment Check**: Before beginning, audit installed tools using:
+> ```bash
+> where.exe kicad-cli ngspice freecadcmd openscad pio python
+> ```
+> Explicitly report missing tools to the user rather than failing silently or substituting unapproved proprietary alternatives.
+
+---
+
+## Standard Project Directory Architecture
+
+Maintain this disciplined workspace structure for every hardware repository:
+
+```
+project-root/
+  docs/
+    requirements.md         # Specs, operating envelopes, environmental ratings, certifications
+    architecture.md         # System block diagrams, power trees (Mermaid), IC selections
+    bringup.md              # Staged first-article power-up checklist & verification measurements
+  hardware/
+    <project>.kicad_pro     # KiCad project file
+    <project>.kicad_sch     # Schematic hierarchy
+    <project>.kicad_pcb     # Board layout and design rules
+    libraries/              # Project-specific custom footprints, symbols, and 3D models
+  mech/
+    model.py                # Parametric build123d / CadQuery enclosure script
+    pcb.step                # Exported board geometry from KiCad
+    enclosure.step          # Production 3D solid model
+    enclosure.stl           # 3D printing mesh
+    drawings/               # 2D dimensional DXF drawings
+  sim/
+    circuits/               # ngspice .cir netlists, subcircuits, and testbenches
+    tune.py                 # Parameter sweep & optimization driver
+    results/                # Generated Bode plots, transient plots, and Monte Carlo curves
+  firmware/
+    platformio.ini          # Build environment configuration
+    src/
+      main.c / main.cpp
+      pins.h                # Hardware pinout contract mapped directly to schematic netlist
+  fab/
+    gerbers/                # RS-274X / Gerber X2 copper, mask, silk, and drill files
+    bom.csv / bom.xlsx      # SMT assembly bill of materials (LCSC/DigiKey part numbers)
+    cpl.csv                 # Component placement centroid list (pick-and-place)
+  scripts/                  # Project automation utilities (ERC/DRC runners, export hooks)
+```
+
+---
+
+## The 10-Stage Product Design Workflow
+
+Follow this sequence strictly. Commit artifacts to Git after completing each stage.
+
+```mermaid
+flowchart TD
+    S1["1. Requirements"] --> S2["2. Architecture & Power Tree"]
+    S2 --> S3["3. Schematic & ERC"]
+    S3 --> S4["4. Simulation & Parameter Tuning"]
+    S4 --> S5["5. PCB Layout & DRC"]
+    S5 --> S6["6. 3D Enclosure & Clearances"]
+    S6 --> S7["7. Thermal & Mechanical Check"]
+    S7 --> S8["8. Firmware & Pinout Contract"]
+    S8 --> S9["9. Fabrication Release (fab/)"]
+    S9 --> S10["10. Bring-up & Verification Plan"]
+```
+
+### 1. Requirements Formulation (`docs/requirements.md`)
+Define quantifiable metrics before selecting components:
+- **Functional Requirements**: Inputs, outputs, human interface (buttons, LEDs, OLED), communication buses (USB, BLE, Wi-Fi, CAN, I2C, SPI).
+- **Power Budget & Envelope**: Supply sources (USB 5V, Li-ion 3.7V, 12V/24V DC, battery chemistry), maximum sleep current ($< 20\,\mu\text{A}$), peak burst current, battery run life.
+- **Environmental & Mechanical**: Enclosure size envelope ($L \times W \times H$ mm), weight limit, operating temperature range (e.g. $-20^\circ\text{C}$ to $+70^\circ\text{C}$), IP water/dust resistance rating, drop tolerance.
+- **Cost & Target Fab**: Target BOM cost at target volume (e.g. $<\$15$ @ 1k units), target assembly provider (JLCPCB, PCBWay).
+- **Compliance Scope**: FCC Part 15 Class B, CE RED, RoHS/WEEE.
+
+### 2. Architecture & Power Tree (`docs/architecture.md`)
+- Author a Mermaid system diagram and power tree showing voltages, maximum currents, and conversion efficiencies:
+  ```mermaid
+  flowchart LR
+    VIN["VBUS (5V, 2A)"] --> PROT["TVS + Reverse Polarity PFET"]
+    PROT --> BUCK["Buck Converter 3.3V (92% Eff)"]
+    PROT --> CHG["Li-Ion Linear Charger (4.2V)"]
+    BUCK --> MCU["MCU Core (3.3V, 80mA)"]
+    BUCK --> SENS["Sensors & Radio (3.3V, 120mA)"]
+  ```
+- **Component Selection Strategy**:
+  - Prioritize components listed as "Basic" or "Preferred" in assembly catalogs (e.g. JLCPCB basic parts library) to eliminate reel-loading surcharges.
+  - Check component lifecycle: Reject components marked NRND (Not Recommended for New Designs) or Obsolete.
+  - Ensure every IC has readily accessible KiCad symbols and footprints.
+
+### 3. Schematic Capture & Electrical Rule Checks
+Draft the schematic hierarchically in KiCad. Enforce standard defensive design:
+- **Power Protection**: TVS diode array at external power input; P-channel MOSFET or ideal diode controller for reverse polarity protection; PTC resettable fuse for overcurrent.
+- **ESD Suppression**: Low-capacitance ESD arrays ($C_j < 1\,\text{pF}$) on high-speed USB/data lines located immediately adjacent to connectors.
+- **Decoupling Hierarchy**: Every IC power pin must have local ceramic decoupling ($0.1\,\mu\text{F} / 100\,\text{nF}$) placed physically closest to the pin, backed by bulk capacitance ($4.7\,\mu\text{F} - 22\,\mu\text{F}$) on the rail.
+- **Debug & Programming**: Standardized debug headers (SWD 10-pin 1.27mm, Tag-Connect, or labeled 2.54mm test pads) including `SWDIO`, `SWCLK`, `NRST`, `GND`, and `VCC`.
+- **Test Points**: Include accessible 1mm surface-mount test pads on every power rail, reset line, and critical communication bus.
+- **ERC Verification Gate**:
+  ```bash
+  kicad-cli sch erc --severity-all --exit-code-violations hardware/<project>.kicad_sch
+  ```
+  *Requirement: Zero errors and zero unacknowledged warnings.*
+
+### 4. Circuit Simulation & Parameter Tuning (`sim/`)
+Simulate critical subcircuits in ngspice before placing PCB traces:
+- **Power Stages**: Buck/boost switching ripple, inductor saturation margin, and transient load step response.
+- **Analog Signal Chains**: Filter cutoff, gain bandwidth, phase margin, and input impedance.
+- **Simulation Execution**:
+  ```bash
+  ngspice -b -r sim/results/transient.raw sim/circuits/power_filter.cir
+  ```
+- **Automated Parameter Optimization**:
+  - Parameterize netlists and use Python drivers (`scipy.optimize.minimize` or `pymoo` for multi-objective problems).
+  - Snap optimized floating-point values to nearest **E24** (5%) or **E96** (1%) standard values using the bundled snapper script:
+    ```bash
+    python scripts/e_series_snapper.py --value 4732 --series E96  # Output: 4750 ohms
+    ```
+  - Re-run Monte Carlo simulations (500 runs) across component tolerance bounds ($\pm 1\%$ resistors, $\pm 10\%$ capacitors) and temperature coefficients.
+
+### 5. PCB Layout, Stackup & Design Rules (`hardware/`)
+- **Layer Stackup**:
+  - Prefer 4-layer boards for any design containing high-speed signals ($>10\,\text{MHz}$), switching regulators, or wireless:
+    - Layer 1 (Top): High-speed signals, component placement
+    - Layer 2 (Inner 1): Solid uninterrupted Ground plane (GND)
+    - Layer 3 (Inner 2): Power planes / signal routing
+    - Layer 4 (Bottom): Secondary signals, ground fill
+- **Design Rules Setup**: Set clearance, trace width, via size, and annular ring limits to match the specific fab's standard (e.g. min 5 mil trace/space, 0.3mm drill / 0.45mm via pad for JLCPCB).
+- **Placement & Routing Strategy**:
+  1. Fix mechanical constraints first: mounting holes, connectors, LEDs, switches matching the enclosure.
+  2. Place decoupling capacitors directly at IC power pins with short, low-inductance via connections to GND plane.
+  3. Keep switching power loops (inductor, diode/switch FET, input cap) compact and isolated from analog traces.
+  4. Match differential pairs ($90\,\Omega$ USB, $100\,\Omega$ Ethernet) and ensure continuous ground return paths underneath.
+- **DRC Verification Gate**:
+  ```bash
+  kicad-cli pcb drc --severity-all --exit-code-violations hardware/<project>.kicad_pcb
+  ```
+  *Requirement: Zero violations.*
+
+### 6. 3D Enclosure Modeling & Interference Checks (`mech/`)
+Export the board geometry as STEP and build the enclosure parametrically around it:
+- **STEP Export**:
+  ```bash
+  kicad-cli pcb export step --subst-models -o mech/pcb.step hardware/<project>.kicad_pcb
+  ```
+- **Parametric Enclosure (`build123d` / `CadQuery`)**:
+  - Read `mech/pcb.step` into the Python model.
+  - Mount bosses: Outer diameter $D_{boss} \approx 2.0 \times D_{screw}$, pilot hole diameter $D_{pilot} \approx 0.8 \times D_{screw}$ for self-tapping thermoplastic screws (e.g. M2 or M2.5).
+  - Process Tolerances:
+    - FDM 3D Printing: $+0.35\,\text{mm}$ to $+0.40\,\text{mm}$ diametral clearance on mating parts.
+    - SLA / Resin: $+0.15\,\text{mm}$ clearance.
+    - CNC Milled Aluminum: $+0.10\,\text{mm}$ clearance.
+  - Programmatic Collision Detection: Compute Boolean intersection between the enclosure solid and the PCB solid. If volume $> 0\,\text{mm}^3$, output coordinates of overlapping components.
+
+### 7. Thermal & Structural Verification
+- **Thermal Dissipation Check**:
+  - Calculate total power loss for linear regulators, switching FETs, and MCUs:
+    $$T_j = T_a + P_{loss} \cdot \left(\theta_{jc} + \theta_{ca}\right)$$
+  - Ensure estimated junction temperature $T_j$ stays below $85^\circ\text{C}$ ($105^\circ\text{C}$ absolute maximum).
+  - Add thermal via arrays (0.3mm drill, 1.0mm pitch) under exposed thermal ground pads.
+- **Stress & Drop Evaluation**:
+  - Run Elmer FEM or FreeCAD FEM CalculiX simulation for snap-fit latches, button flexures, or drop impact when specified in requirements.
+
+### 8. Firmware Scaffolding & Pinout Contract (`firmware/`)
+- **Authoritative Pin Contract**:
+  - Generate or maintain `firmware/include/pins.h` synced directly to the KiCad netlist.
+  - Map every GPIO to its hardware function, internal pull-up/down requirements, and interrupt capabilities.
+- **PlatformIO Scaffold**:
+  - Create `platformio.ini` with target board, framework (Arduino, Zephyr, ESP-IDF), build flags, and monitor baud rate.
+  - Implement baseline hardware self-test: power rail ADC reads, I2C bus scanner, and blinking status LED.
+- **State Machine Definition**:
+  - Document operational states (BOOT, IDLE, ACTIVE, LOW_POWER_SLEEP, FAULT) using Mermaid state diagrams.
+
+### 9. Fabrication Package Release (`fab/`)
+Generate clean, verified manufacturing files in `fab/`:
+- **Gerber & Drill Generation**:
+  ```bash
+  kicad-cli pcb export gerbers -o fab/gerbers/ hardware/<project>.kicad_pcb
+  kicad-cli pcb export drill -o fab/gerbers/ hardware/<project>.kicad_pcb
+  ```
+- **Component Placement File (CPL / Centroid)**:
+  ```bash
+  kicad-cli pcb export pos --format csv --units mm -o fab/cpl.csv hardware/<project>.kicad_pcb
+  ```
+- **Bill of Materials (BOM)**:
+  - Generate formatted CSV / Excel BOM compatible with target fab (Columns: `Designator`, `Val`, `Package`, `LCSC Part #`, `Manufacturer`, `MPN`, `Quantity`).
+  - Verify every component status is active and in-stock.
+- **Enclosure Fabrication Files**:
+  - Export production STEP: `enclosure_top.step`, `enclosure_bottom.step`.
+  - Export 3D printing STL: `enclosure_top.stl`, `enclosure_bottom.stl` (high chordal tolerance $\le 0.05\,\text{mm}$).
+
+### 10. Prototype Bring-Up Plan (`docs/bringup.md`)
+Deliver a step-by-step verification checklist for initial board bring-up:
+1. **Visual Inspection**: Check for solder bridges, tombstoned passives, IC orientation pin-1 markers under a microscope.
+2. **Cold Resistance Checks (Unpowered)**:
+   - Measure resistance from each power rail (`VBUS`, `3V3`, `VBAT`) to `GND`.
+   - Reject power-up if resistance is below expected impedance (short circuit detection).
+3. **Current-Limited Power-Up**:
+   - Power up using a bench supply limited to $50\,\text{mA}$.
+   - Verify supply current does not rail against the current limit.
+4. **Voltage Rail Verification**:
+   - Probe each test point with a DMM: check nominal voltages ($3.3\text{V} \pm 2\%$).
+   - Check switching regulator ripple with an oscilloscope.
+5. **Debug Probe & Firmware Bring-up**:
+   - Connect SWD / JTAG debug probe; read MCU Device ID.
+   - Flash minimal test firmware to verify clocks, UART console, and I2C/SPI peripheral connectivity.
+
+---
+
+## Parameter Tuning & Optimization Guidelines
+
+1. **Numerical Objective Formulation**:
+   - Formulate tuning problems mathematically (e.g. minimize ripple $V_{rip}(L, C)$ subject to $f_{sw} \ge 500\,\text{kHz}$, $I_{L,peak} < I_{sat}$, and cost $\le \$0.80$).
+2. **Algorithm Selection**:
+   - Single objective (e.g. RC filter cutoff): `scipy.optimize.minimize_scalar` or Brent's method.
+   - Constrained multi-parameter: `scipy.optimize.minimize` (SLSQP or Nelder-Mead).
+   - Multi-objective trade-offs (e.g. efficiency vs transient recovery time vs board area): `pymoo` with NSGA-II to extract the Pareto frontier.
+3. **E-Series Value Snapping**:
+   - Never leave theoretical values (e.g. $4.712\,\text{k}\Omega$) in the schematic. Snap to standard E24/E96 values and re-simulate to confirm performance margins.
+4. **Tolerance Worst-Case & Yield**:
+   - Run 500+ Monte Carlo iterations varying parameters by their component tolerances ($\pm 1\%$, $\pm 5\%$, $\pm 10\%$, $\pm 20\%$) and temperature drifts. Report 3-sigma worst-case metrics.
+
+---
+
+## Non-Negotiable Engineering Rules
+
+1. **Proof of Verification**: Never declare a schematic, PCB, or simulation complete without running `kicad-cli sch erc`, `kicad-cli pcb drc`, or ngspice and presenting the exact CLI output.
+2. **No Fictional Components**: Never invent component MPNs, footprints, pin assignments, or electrical ratings. If a part number is unconfirmed, flag it and prompt the user.
+3. **Safety Critical Isolation**: Flag anything involving AC mains ($>48\,\text{V}$), lithium-ion battery charging without protection ICs, high currents ($>5\,\text{A}$), or RF transmitters requiring FCC certification. Mandate qualified engineering review.
+4. **Script-First Principle**: Every build step, export, and simulation must be executable headlessly via CLI or Python script. If a GUI action is unavoidable, supply explicit step-by-step instructions.
+5. **Disciplined Interaction**: Ask at most one concise clarifying question at a time, and only when the choice fundamentally alters hardware architecture.
+6. **Progress Transparency**: Conclude each design turn with a concise 3-part ledger:
+   - What was accomplished and verified.
+   - Files created or modified.
+   - The immediate next task.
